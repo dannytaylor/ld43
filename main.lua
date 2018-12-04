@@ -1,20 +1,19 @@
 --main.lua
+sprites = require 'sprites'
 
 require 'init'
 require 'inputs'
 require 'map'
+require 'ss'
 
 Delaunay = require 'delaunay'
 Point    = Delaunay.Point
 mst = require 'mst'
 
-sprites = require 'sprites'
 
 nodes = mapGen(WIDTH*2,HEIGHT*2,16,WIDTH/6,WIDTH/3)
 -- nodes = mapGen(WIDTH,HEIGHT,16,WIDTH/24,WIDTH/8)
 -- nodes = mapGen(WIDTH,HEIGHT,16,5,10)
-
-
 
 -- ANIMATIONS
 player.a={}
@@ -26,7 +25,7 @@ critter_bg = am.group()
 for i = 1,NUMCRITTERS,1 do
 	critters[i].a = {}
 	critters[i].a[1]={[1]=sprites.c_i1,[2]=sprites.c_i2,rate=0.25,num=2,frame=1,count=math.random(25)/100}
-	critters[i].a[2]={[1]=sprites.c_w1,[2]=sprites.c_w2,rate=0.2 ,num=2,frame=1,count=math.random(20)/100}
+	critters[i].a[2]={[1]=sprites.c_w1,[2]=sprites.c_w2,rate=0.15 ,num=2,frame=1,count=math.random(20)/100}
 	critter_fg:append(am.translate(vec2(critters[i].x,critters[i].y)):tag("critter_"..i)^am.scale(CRITTERSCALE)^am.sprite(critters[i].a[1][1]):tag("crittera_"..i))
 end
 
@@ -38,14 +37,16 @@ win.scene = am.group{
 	^{
 		am.group{
 			map_group:tag"map",
+			am.circle(vec2(0,0),0,WHITE):tag"wipe2",
+			am.circle(vec2(0,0),0,BLACK):tag"wipe",
 			am.translate(0,0):tag"decals",
-			critter_bg,
+			critter_bg:tag"crbg",
 
 			am.translate(player.x,player.y):tag"playert"
 			^ am.scale(0.5,0.5):tag"playerdir"
 			^ am.sprite(player.a[1][1]):tag"playerimg",
 			
-			critter_fg,
+			critter_fg:tag"crfg",
 
 			am.group{
 				am.translate(player.x,player.y):tag"yest"
@@ -59,8 +60,18 @@ win.scene = am.group{
 			}
 		}:tag"base",
 	},
-	am.translate(0,HEIGHT/4)^am.scale(2)^am.text("hey I didn't add wall collisions so stay\n on the paths, honour system :)\n \n (space to dismiss)",vec4(1,0.5,0.5,1)):tag"textoverlay",
-	am.group():tag"ui"
+
+	am.translate(0,HEIGHT/3)
+	^ am.scale(2)
+	^ am.text("hey I didn't add wall collisions so stay\n on the paths, honour system :)\n \n (space to close)",vec4(1,0.5,0.5,1)):tag"textoverlay",
+	
+	am.group{
+		am.translate(0,-HEIGHT/2):tag"ui"
+		^ am.translate(0,80)
+		^ am.scale(2)
+		^ am.text("",BLACK):tag"uitext"
+	},
+	am.group():tag"ssgroup"^am.sprite("img/ss/mm.png"):tag"ssimg"
 }
 mapDraw(scene)
 
@@ -78,10 +89,10 @@ function player_move(scene,m)
 		player.dir = -player.dir
 		if player.dir == 1 then 
 			scene"yesscale".scale2d = vec2(0.4)
-			scene"noscale".scale2d = vec2(0.5) 
+			scene"noscale".scale2d = vec2(0.55) 
 		else 
 			scene"noscale".scale2d = vec2(0.4) 
-			scene"yesscale".scale2d = vec2(0.5)
+			scene"yesscale".scale2d = vec2(0.55)
 		end
 	end
 
@@ -92,7 +103,7 @@ function player_move(scene,m)
 	player.y = player.y + player.vy
 	
 	-- bind player to event box
-	if ACTIVENODE and ACTIVENODE ~= 0 and nodes[ACTIVENODE].e ~= 'empty' and nodes[ACTIVENODE].e ~= 'start' and nodes[ACTIVENODE].e ~= 'end' then
+	if ACTIVENODE and ACTIVENODE ~= 0 and nodes[ACTIVENODE].e == 'event' then
 		if eventcheck(nodes[ACTIVENODE]) == false then
 			-- log(ACTIVENODE)
 			player.x,player.y = tempx,tempy
@@ -146,11 +157,11 @@ function critter_move(scene)
 		critters[i].y = critters[i].y + critters[i].vy
 
 		-- depth check
-		if critters[i].y >= (player.y-40) and critters[i].fg == 1 then
+		if critters[i].y >= (player.y-60) and critters[i].fg == 1 then
 			critters[i].fg = 0
 			critter_fg:remove("critter_"..i)
 			critter_bg:append(am.translate(vec2(critters[i].x,critters[i].y)):tag("critter_"..i)^am.scale(CRITTERSCALE)^am.sprite(critters[i].a[1][1]):tag("crittera_"..i))
-		elseif critters[i].y < (player.y-40) and critters[i].fg == 0 then
+		elseif critters[i].y < (player.y-60) and critters[i].fg == 0 then
 			critters[i].fg = 1
 			critter_bg:remove("critter_"..i)
 			critter_fg:append(am.translate(vec2(critters[i].x,critters[i].y)):tag("critter_"..i)^am.scale(CRITTERSCALE)^am.sprite(critters[i].a[1][1]):tag("crittera_"..i))
@@ -182,10 +193,84 @@ end
 
 
 win.scene:action(function(scene)
-	input_helper(scene)
-	update_helper(scene)
-	anim_helper(scene)
+	if musicid == nil then
+		musicid = 1
+		scene:action('music',am.play(music,true,1,0.5))
+	end
+	if win:key_released"escape" then	
+		win:close()
+	end
+	if GAMESTATE == 'game' then
+		input_helper(scene)
+		update_helper(scene)
+		anim_helper(scene)
+	elseif GAMESTATE == 'winlose' then
+		while #critters > 0 do
+			critter_bg:remove("critter_"..#critters)
+			critter_fg:remove("critter_"..#critters)
+			table.remove(critters,#critters)
+		end
+		if win:key_released"space" then	
+			scene:cancel('cavesfx')
+			scene:remove('uitext2')
+			scene:remove('uirect2')
+			-- scene:remove_all('crbg')
+			-- scene:remove_all('crfg')
+
+			GAMESTATE = 'menu'
+			scene:action('music',am.play(music,true,1,0.5))
+			scene"ssimg".source = "img/ss/mm.png"
+		end
+	elseif GAMESTATE == 'menu' then
+		if win:key_released"space" then	
+			if ssrun == 1 then
+				GAMESTATE = 'game'
+				-- scene:action(am.play('cavesfx',"sfx/cavesfx.ogg",true,1.0,0.08))
+				remakemap(scene)
+				scene:remove("ssimg")
+
+			else 
+				GAMESTATE = 'slideshow'
+				scene"ssimg".source = "img/ss/ss1.png"
+				scene:cancel('music')
+				sssfxid = scene:action('sssfx',am.play(sssfx,false,1.0,1.0))
+				sscount = am.current_time()
+			end
+		end	
+	elseif GAMESTATE == 'slideshow' then 
+		ss_helper(scene)
+	end
 end)	
 
+function remakemap(scene)
+	player.x,player.y = 0,0
+	cam.x,cam.y = 0,0
 
+	FLOOR = -3
 
+	critters = {}
+	for i = 1,NUMCRITTERS do
+		critters[i] = {
+			x=math.random(-100,100),
+			y=math.random(-100,100),
+			vx=0,vy=0,
+			ox=math.random(-50,50),
+			oy=math.random(10,50),
+			vmax=math.random(50,70)/10,
+			anim=1,
+			fg=1
+		}
+		critters[i].a = {}
+		critters[i].a[1]={[1]=sprites.c_i1,[2]=sprites.c_i2,rate=0.25,num=2,frame=1,count=math.random(25)/100}
+		critters[i].a[2]={[1]=sprites.c_w1,[2]=sprites.c_w2,rate=0.15 ,num=2,frame=1,count=math.random(20)/100}
+		critter_fg:append(am.translate(vec2(critters[i].x,critters[i].y)):tag("critter_"..i)^am.scale(CRITTERSCALE)^am.sprite(critters[i].a[1][1]):tag("crittera_"..i))
+
+	end
+	
+	ACTIVENODE = 0
+	nodes = mapGen(WIDTH*2,HEIGHT*2,16,WIDTH/6,WIDTH/3)
+	local newmapgroup = mapDraw()
+	scene:replace("map",newmapgroup:tag"map")
+	scene"decals":remove_all()
+	scene:update()
+end
